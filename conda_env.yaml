@@ -1,0 +1,20 @@
+# Use the command
+#
+# conda env create --file conda_env.yaml
+#
+# to create a conda enviroment named darcia. Using
+# conda-force, we get petsc and petsc4py with hypre and mumps.
+#
+name: otgraph
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy
+  - sympy
+  - pytest
+  - pytest-cov
+  - scipy
+  - mpi4py
+  - petsc
+  - petsc4py
