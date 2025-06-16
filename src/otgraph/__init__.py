@@ -5,4 +5,5 @@ from .admksolver import AdmkSolver
 __all__ = [
     "Graph",
     "MinNormProblem",
+    "AdmkSolver",
 ]
