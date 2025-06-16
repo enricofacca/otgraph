@@ -22,10 +22,26 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y libhypre-dev libmumps-seq-dev
+	pip install numpy mpi4py
+        PETSC_CONFIGURE_OPTIONS="--download-hypre --download-mumps --download-parmetis --download-ml --download-metis --download-scalapack" pip install petsc petsc4py
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install tox tox-gh-actions
-    - name: Test with tox
-      run: tox
+    #- name: Install dependencies
+    #  run: |
+    #    python -m pip install --upgrade pip
+    #    pip install tox tox-gh-actions
+    #- name: Test with tox
+    #  run: tox
+   - name: Install DarSIA
+      run: pip install .[dev]
+
+    - name: black
+      if: ${{ always() }}
+      run: black --check src
+
+    - name: flake8
+      if: ${{ always() }}
+      run: flake8 src
+
+    - name: pytest
+      if: ${{always()}}
+      run: pytest
