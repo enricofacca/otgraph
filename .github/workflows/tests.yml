@@ -22,7 +22,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y libhypre-dev libmumps-seq-dev
-	pip install numpy mpi4py
+        pip install numpy mpi4py
         PETSC_CONFIGURE_OPTIONS="--download-hypre --download-mumps --download-parmetis --download-ml --download-metis --download-scalapack" pip install petsc petsc4py
 
     #- name: Install dependencies
