@@ -1,5 +1,5 @@
 import numpy as np
-import scipy.sparse.linalg as splinalg
+import scipy
 
 
 class MinNormProblem:
@@ -17,7 +17,15 @@ class MinNormProblem:
     - weight = weight in the norm
     """
 
-    def __init__(self, matrix, rhs, q_exponent=1.0, weight=None):
+    def __init__(
+        self,
+        matrix,
+        rhs,
+        q_exponent=1.0,
+        weight=None,
+        dirichlet_nodes=[],
+        dirichlet_values=[],
+    ):
         """
         Constructor of problem setup
         """
@@ -33,20 +41,28 @@ class MinNormProblem:
         self.weight = weight
         self.inv_weight = 1.0 / weight
 
+        self.dirichlet_nodes = dirichlet_nodes
+        self.dirichlet_values = dirichlet_values
+
         # gradient W^{-1} * (signed_incidence * potential)
         def matvec_grad(x):
             return self.inv_weight * self.matrixT.dot(x)
-        self.gradient = splinalg.LinearOperator((self.n_col, self.n_row), matvec_grad)
 
+        self.gradient = scipy.sparse.linalg.LinearOperator(
+            (self.n_col, self.n_row), matvec_grad
+        )
+
+        # explicit matrices
+        self.inv_W = scipy.sparse.diags(self.inv_weight)
+        self.grad = self.inv_W.dot(self.matrixT)
+        self.div = self.matrix
+
+        # problem inputs
         self.rhs = rhs
         self.q_exponent = q_exponent
-
         ierr = self.check_inputs()
         if ierr != 0:
             print("Error in inputs")
-
-        self.grad = self.gradient
-        self.div = self.matrix
 
     def check_inputs(self):
         """
