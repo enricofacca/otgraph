@@ -1,4 +1,5 @@
 import numpy as np
+import sympy
 from petsc4py import PETSc
 import time as cputiming
 import scipy
@@ -11,6 +12,8 @@ from .petsc_utils import (
     flatten_parameters,
     solve_with_petsc,
     scipy2petsc,
+    SNESReasons,
+    bounds,
 )
 
 
@@ -36,12 +39,12 @@ def adaptive_deltat(state, update):
 class AdmkSolver:
     """
     Solver class for problem
-    min \|v\|_{w}^{q} A v = rhs
+    min |v|_{w}^{q} A v = rhs
     with A signed incidence matrix of Graph
     via Algebraic Dynamic Monge-Kantorovich.
     We find the long time solution of the
     dynamics
-    \dt \Tdens(t)=\Tdens(t) * | \Grad \Pot(\Tdens)|^2 -Tdens^{gamma}
+    dt Tdens(t)=Tdens(t) * | Grad Pot(Tdens)|^2 -Tdens^{gamma}
     """
 
     def __init__(
@@ -282,27 +285,15 @@ class AdmkSolver:
     def pmass(self):
         return self.problem.q_exponent / (2 - self.problem.q_exponent)
 
-    def mass_function(t, derivative_order=0):
-        self.pmass_exponent = self.pmass()
-        f = lambda t: t**self.pmass_exponent
-        df = f.diff(t)
-        dff = df.diff(t)
-        t = scipy.symbols("t")
-        sympy.lambdafy(t, self.mass_function)
-        return
-
-    def g(t):
+    def g(self, t):
         pmass_exponent = self.pmass()
-        t = spmpy.symbol("t")
+        t = sympy.symbol("t")
         g_fun = t**pmass_exponent / pmass_exponent
         return g_fun
 
     def lambdafy(g):
         t = g.get
         return sympy.lambdafy(t, g)
-
-    def weight_mass(self, tdens):
-        return 0.5 * np.dot(problem.weight * self.mass_function(tdens))
 
     def Lagrangian(self, pot, tdens):
         """
@@ -373,9 +364,9 @@ class AdmkSolver:
         """
         pot, tdens = self.subfunctions(sol)
         gradient_tdens = self.Lagrangian_gradient(pot, tdens, "tdens")
-        var = norm(tdens * gradient_tdens * self.problem.weight) / norm(
-            tdens * self.problem.weight
-        )
+        var = np.linalg.norm(
+            tdens * gradient_tdens * self.problem.weight
+        ) / np.linalg.norm(tdens * self.problem.weight)
         return var
 
     def tdens2gfvar(self, tdens):
@@ -387,7 +378,7 @@ class AdmkSolver:
 
     def gfvar2tdens(self, gfvar, derivative_order=0):
         """
-        Compute \phi(gfvar)=tdens, \phi' (gfvar), or \phi''(gfvar)
+        Compute phi(gfvar)=tdens, phi' (gfvar), or phi''(gfvar)
         """
         if derivative_order == 0:
             tdens = gfvar**2
@@ -405,13 +396,12 @@ class AdmkSolver:
         # F_pot=f_newton[1+n_pot:n_pot + n_tdens] = -weight (gfvar-gfvar_old)/deltat + \grad \Lyapunov
         tdens = self.gfvar2tdens(gfvar, 0)  # 1 means first derivative
         trans_prime = self.gfvar2tdens(gfvar, 1)  # 1 means first derivative
-        trans_second = self.gfvar2tdens(gfvar, 2)  # 2 means second derivative
         grad_pot = problem.potential_gradient(pot)
 
-        f_newton = np.zeros(npot + ntdens)
+        f_newton = np.zeros(self.npot + self.ntdens)
 
-        f_newton[0:n_pot] = problem.matrix.dot(tdens * grad_pot) - problem.rhs
-        f_newton[n_pot : n_pot + n_tdens] = -problem.weight * (
+        f_newton[0 : self.n_pot] = problem.matrix.dot(tdens * grad_pot) - problem.rhs
+        f_newton[self.n_pot : self.n_pot + self.n_tdens] = -problem.weight * (
             (gfvar - gfvar_old) / ctrl.deltat
             + trans_prime * 0.5 * (-(grad_pot**2) + 1.0)
         )
@@ -419,7 +409,12 @@ class AdmkSolver:
 
     def build_jacobian_gfvar(self, problem, pot, gfvar, ctrl):
         # assembly jacobian
+        tdens = self.gfvar2tdens(gfvar, 0)
+        trans_prime = self.gfvar2tdens(gfvar, 1)
+        trans_second = self.gfvar2tdens(gfvar, 2)
         conductivity = tdens * problem.inv_weight
+        grad_pot = problem.potential_gradient(pot)
+
         A_matrix = self.build_stiff(problem.matrix, conductivity)
         B_matrix = scipy.sparse.diags(trans_prime * grad_pot).dot(problem.matrixT)
         BT_matrix = B_matrix.transpose()
@@ -428,7 +423,7 @@ class AdmkSolver:
         diag_C_matrix = problem.weight * (
             1.0 / self.deltat + trans_second * 0.5 * (-(grad_pot**2) + 1.0)
         )
-        C_matrix = sp.sparse.diags(diag_C_matrix)
+        C_matrix = scipy.sparse.diags(diag_C_matrix)
         msg = (
             "{:.2E}".format(min(diag_C_matrix))
             + "<=C <="
@@ -503,6 +498,7 @@ class AdmkSolver:
             [[petsc_J11, petsc_J12], [petsc_J21, petsc_J22]]
         )
         P_petsc = J_petsc
+        return J_petsc, P_petsc
 
     def iterate(self, sol):
         """
@@ -537,7 +533,7 @@ class AdmkSolver:
                             # of the constraint since
                             # div(v)-f = div(tdens grad pot) -f
                             "ksp_rtol": self.get_ctrl("tol_constraint"),
-                            #'ksp_monitor_true_residualot': None,
+                            # 'ksp_monitor_true_residualot': None,
                         },
                     }
                 )
@@ -586,7 +582,7 @@ class AdmkSolver:
                         # of the constraint since
                         # div(v)-f = div(tdens grad pot) -f
                         "ksp_rtol": self.get_ctrl("tol_constraint"),
-                        #'ksp_monitor_true_residualot': None,
+                        # 'ksp_monitor_true_residualot': None,
                     },
                 }
             )
@@ -693,11 +689,14 @@ class AdmkSolver:
 
                 snes.setFromOptions()
                 snes.solve(None, petsc_x)
+                reason = snes.get_reason()
+                id_error = SNESReasons[reason]
+                ierr_newton = 0 if id_error > 0 else 1
                 x[:] = petsc_x.getArray()
                 pot, gfvar = self.subfunctions(x)
                 snes_converged = snes.getConvergedReason()
                 print(snes_converged)
-                self.eval_F(potgfvar, fnewton)
+                self.eval_F(x, fnewton)
                 fnorm = np.linalg.norm(fnewton)
                 print(f"|F|{fnorm:.1e}")
                 if ierr_newton == 0:
@@ -740,7 +739,6 @@ class AdmkSolver:
                 petsc_rhs = petsc_J.createVecRight()
 
                 L_sizes = petsc_J.getSizes()
-                L_range = petsc_J.getOwnershipRange()
                 print("L_sizes", L_sizes)
                 neqns = L_sizes[0][0]
                 print("neqns", neqns)
@@ -793,7 +791,6 @@ class AdmkSolver:
                 ksp.solve(petsc_rhs, petsc_inc)
 
                 reason = ksp.getConvergedReason()
-                last_pres = ksp.getResidualNorm()
                 if reason < 0:
                     ierr_newton = 1
                 rhs_norm = petsc_rhs.norm()
@@ -806,9 +803,6 @@ class AdmkSolver:
                     res = 0
                     if rhs_norm > 0:
                         res = resvec[-1] / rhs_norm
-
-                    last_pres = ksp.getResidualNorm()
-                    pres = last_pres
 
                 # convert back to np
                 inc[:] = petsc_inc.getArray()
