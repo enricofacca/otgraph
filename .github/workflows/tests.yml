@@ -31,7 +31,7 @@ jobs:
     #    pip install tox tox-gh-actions
     #- name: Test with tox
     #  run: tox
-   - name: Install DarSIA
+    - name: Install orgraph
       run: pip install .[dev]
 
     - name: black
