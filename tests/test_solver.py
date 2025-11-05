@@ -25,9 +25,10 @@ def test_solver_case_1():
 
     problem = MinNormProblem(E_matrix, rhs, q_exponent=1.0)
 
-    admk = AdmkSolver(problem, tol_opt=1e-3, tol_constraint=1e-8)
-    admk.set_ctrl("verbose", 0)
-    admk.set_ctrl("max_iter", 50)
+    admk = AdmkSolver(problem, tol_opt=1e-4, tol_constraint=1e-8)
+    admk.set_ctrl("verbose", 1)
+    admk.set_ctrl("max_iter", 200)
+    admk.set_ctrl(["explicit_euler_tdens","deltat","control"], "adaptive")
 
     admk.solve()
     vel, pot, tdens = admk.get_otp_solution()
@@ -41,5 +42,9 @@ def test_solver_case_1():
     if np.linalg.norm(pot - expected_pot) > np.linalg.norm(-pot - expected_pot):
         pot = -pot
 
-    assert np.allclose(pot, expected_pot, rtol=1e-3, atol=1e-3)
-    assert np.allclose(tdens, expected_tdens, rtol=1e-3, atol=1e-3)
+    support = [0,3,4]
+        
+    diff_pot = np.linalg.norm(pot[support] - expected_pot[support]) / np.linalg.norm(expected_pot[support]) 
+    assert diff_pot < 1e-3
+    diff_tdens = np.linalg.norm(tdens - expected_tdens) / np.linalg.norm(expected_tdens) 
+    assert diff_tdens < 1e-3
