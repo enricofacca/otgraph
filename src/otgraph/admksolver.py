@@ -896,7 +896,7 @@ class AdmkSolver:
             var = np.linalg.norm(
                 tdens * gradient_tdens * self.problem.weight
             ) / np.linalg.norm(tdens * self.problem.weight)
-            msg = f"it={iter} var={var:.2e} res{res:.2e}"
+            msg = f"it={iter} var={var:.2e} res={res:.2e} time-step={self.deltat:.2e}"
             self.print_info(msg, 1)
             if (var < self.get_ctrl("tol_opt")) and (
                 res < self.get_ctrl("tol_constraint")
