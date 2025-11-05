@@ -26,30 +26,30 @@ class PrimalPC(object):
     def setUp(self,pc):
         # get info from the parent KSP object
         appctx = pc.getAttr("appctx")
-        print("PrimalPC")
-        print(appctx)
+        #print("PrimalPC")
+        #print(appctx)
         self.vpp = appctx["vpp"]
-        print("PrimalPC vpp", self.vpp.getArray())
+        #print("PrimalPC vpp", self.vpp.getArray())
         
         self.vpt = appctx["vpt"]
-        print("PrimalPC vpt", self.vpt.getArray())
+        #print("PrimalPC vpt", self.vpt.getArray())
         
         self.vts = appctx["vts"]
-        print("PrimalPC vts", self.vts.getArray())
+        #print("PrimalPC vts", self.vts.getArray())
         
         self.vst = appctx["vst"]
-        print("PrimalPC vst", self.vst.getArray())
+        #print("PrimalPC vst", self.vst.getArray())
         
         self.vss = appctx["vss"]
-        print("PrimalPC vss", self.vss.getArray())
+        #print("PrimalPC vss", self.vss.getArray())
         
         self.c =  self.vts * self.vst / self.vss
         self.inv_v = 1.0 / (self.vpp + self.vpt * self.vpt / self.c)
-        print("PrimalPC inv_v", self.inv_v.getArray())
+        #print("PrimalPC inv_v", self.inv_v.getArray())
         self.inv_S = diag(self.inv_v)
 
     def apply(self, pc, x, y):
-        print("PrimalPC apply")
+        #print("PrimalPC apply")
         #print("x", x.getArray())
         #self.inv_v.pointwiseMult(x,y)
         self.inv_S.mult(x, y)
@@ -71,7 +71,7 @@ class CPC(object):
         # c = - vst/ vss 
         self.c = self.vts * self.vst / self.vss
         self.inv_c = -1.0 / self.c
-        print("CPC inv_c", self.inv_c.getArray())
+        #print("CPC inv_c", self.inv_c.getArray())
         #self.x_copy = PETSc.Vec().createWithArray(np.zeros(self.v21.getSize()))
         
         self.inv_C = diag(self.inv_c)
@@ -198,38 +198,6 @@ ksp_ctrl = {
 }
 
 
-# 
-# set ksp controls
-#
-ksp_ctrl_2by2 = {
-    "ksp" : {
-        "type": "preonly",
-        "max_it" : 100,
-        "rtol" : 1e-6,
-        #"monitor_true_residual" : None,
-    },
-    "pc_type" : "fieldsplit",
-    "pc_fieldsplit_type" : "schur",
-    "pc_fieldsplit_schur_fact_type" : "full",
-    # how to split the fields
-    "pc_fieldsplit_block_size" : 2,
-    "pc_fieldsplit_0_fields": "0", # tdens
-    "pc_fieldsplit_1_fields": "1", # pot
-    # tdens ^{-1}
-    "fieldsplit_0" : {
-        "ksp_type" : "preonly",
-        "pc_type": "python",
-        "pc_python_type": __name__+ ".CPC",
-    },
-    # (2x2) inverse
-    # primal schur with cond = tdens + tdens/slack g^2
-    "fieldsplit_1" : {
-        "ksp_type" : "preonly",
-        "pc_type": "python",
-        "pc_python_type": __name__ + ".PrimalPC",
-    }
-}
-
 
 sol_vec = PETSc.Vec().createWithArray(np.zeros(6))
 rhs_vec = PETSc.Vec().createWithArray(np.zeros(6))
@@ -240,8 +208,6 @@ appctx={"vpp": vpp, "vpt" : vpt, "vst":vst, "vts":vts,"vss":vss}
 solver_prefix = "iterative_solver_"
 ksp = setup_ksp_solver(
         A,
-        rhs_vec,
-        sol_vec,
         solver_options=ksp_ctrl,
         field_ises= [
             ("0", iss_rows[0]), 
@@ -284,8 +250,6 @@ ksp_ctrl = {
 
 ksp_direct = setup_ksp_solver(
         A,
-        rhs_vec,
-        sol_direct_vec,
         solver_options=ksp_ctrl,
         solver_prefix= "direct_solver_"
     )
@@ -303,5 +267,91 @@ assert( res.norm()/rhs_vec.norm() < 1e-10 )
 
 assert( (sol_vec-sol_direct_vec).norm() < 1e-10 )
 
+A = PETSc.Mat().createNest([ 
+    [App, Apt, None], 
+    [Atp, None, Ats], 
+    [None, Ast, Ass]])
+A.setUp()
+
+# Create nested matrix
+#A = PETSc.Mat().createNest([[A00, A01, None], [A10, None, A12], [None,A21,A22]])
+#A = PETSc.Mat().createNest([[C, A10], [A01,A00]])
+#A.setUp()
+
+iss_rows, iss_cols = A.getNestISs()
+
+
+# 
+# set ksp controls
+#
+ksp_ctrl = {
+    "ksp" : {
+        "type":"preonly",
+        "max_it" : 100,
+        "rtol" : 1e-6,
+        "monitor_true_residual" : None,
+    },
+    "pc_type" : "fieldsplit",
+    "pc_fieldsplit_type" : "schur",
+    "pc_fieldsplit_schur_fact_type" : "full",
+    # how to split the fields
+    "pc_fieldsplit_block_size" : 3,
+    "pc_fieldsplit_0_fields": "2", # slack
+    "pc_fieldsplit_1_fields": "0, 1", # tdens, pot
+    # tdens ^{-1}
+    "fieldsplit_0" : {
+        "ksp_type": "preonly",
+        "pc_type": "jacobi"
+        },
+    # (2x2) inverse
+    "fieldsplit_1" : {
+        "ksp_type": "preonly",
+        "pc_type" : "fieldsplit",
+        "pc_fieldsplit_type": "schur",
+        "pc_fieldsplit_schur_fact_type": "full",
+        "pc_fieldsplit_block_size" : 2,
+        "pc_fieldsplit_0_fields": "1", # tdens
+        "pc_fieldsplit_1_fields": "0", # pot
+        # C^{-1}
+        "fieldsplit_0" : {
+            "ksp_type" : "preonly",
+            "pc_type": "python",
+            "pc_python_type": __name__+ ".CPC",
+        },
+        # primal schur with cond = tdens + tdens/slack g^2
+        "fieldsplit_1" : {
+            "ksp_type" : "preonly",
+            "pc_type": "python",
+            "pc_python_type": __name__ + ".PrimalPC",
+        }
+    }
+}
+
+
+solver_prefix = "other_solver_"
+ksp = setup_ksp_solver(
+        A,
+        solver_options=ksp_ctrl,
+        field_ises= [
+            ("0", iss_rows[0]), 
+            ("1", iss_rows[1]), 
+            ("2", iss_rows[2])
+            ],
+        appctx=appctx,
+        solver_prefix= solver_prefix
+    )
+
+
+sol_vec.set(1.0)
+ksp.solve(rhs_vec, sol_vec)
+print("Solution vector after other solver:")
+print(sol_vec.getArray())
+
+res = A.createVecRight()
+A.mult(sol_vec, res)
+res.axpy(-1.0, rhs_vec)
+
+print("Residual vector after initial solve:")
+assert(res.norm()/rhs_vec.norm() < 1e-10)
 
 
