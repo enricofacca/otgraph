@@ -216,8 +216,6 @@ def bounds(vect, label: str):
 
 def setup_ksp_solver(
         A_petsc: PETSc.Mat,
-        rhs_vec: PETSc.Vec,
-        sol_vec: PETSc.Vec,
         solver_options: dict={},
         field_ises: Optional[
             list[tuple[str, Union[PETSc.IS, npt.NDArray[np.int32]]]]
@@ -310,11 +308,11 @@ def setup_ksp_solver(
         A_petsc.setOptionsPrefix(solver_prefix)
         A_petsc.setFromOptions()
 
-        sol_vec.setOptionsPrefix(solver_prefix)
-        sol_vec.setFromOptions()
+        #sol_vec.setOptionsPrefix(solver_prefix)
+        #sol_vec.setFromOptions()
 
-        rhs_vec.setOptionsPrefix(solver_prefix)
-        rhs_vec.setFromOptions()
+        #rhs_vec.setOptionsPrefix(solver_prefix)
+        #rhs_vec.setFromOptions()
 
         #ksp.view()
 
@@ -339,10 +337,7 @@ def setup_ksp_solver(
                 # It works for now, but it is not clear why
                 #k.setUp()
                 p = k.getPC()
-                print("")
-                print(f"Setting up preconditioner {p.getType()} for {i}")
-                print("")
-
+                
                 # This is in order to pass the appctx
                 # to all preconditioner. TODO: find a better way
                 p.setAttr("appctx", appctx)
