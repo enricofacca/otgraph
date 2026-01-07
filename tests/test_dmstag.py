@@ -13,6 +13,7 @@ class PoissonNeumannStag:
         self.dm.setGlobalSizes([nx, ny])
         self.dm.setDof((0, 1, 1))
         self.dm.setStencilWidth(1)
+        self.dm.setStencilType(PETSc.DMStag.StencilType.BOX)
         self.dm.setBoundaryTypes([PETSc.DM.BoundaryType.GHOSTED, PETSc.DM.BoundaryType.GHOSTED])
         self.dm.setUp()
 
