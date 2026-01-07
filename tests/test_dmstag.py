@@ -33,7 +33,8 @@ class PoissonNeumannStag:
         vec_template.destroy()
 
     def create_aij_matrix(self):
-        M = PETSc.Mat().createAIJ([self.n_global, self.n_global])
+        # Ensure local size matches DMStag distribution
+        M = PETSc.Mat().createAIJ(size=[(self.n_local, self.n_global), (self.n_local, self.n_global)])
         M.setOption(PETSc.Mat.Option.NEW_NONZERO_ALLOCATION_ERR, False)
         M.setUp()
         return M
@@ -286,8 +287,6 @@ def main():
 
     norm_sol = u_sol_elem.norm()
     norm_ex = u_exact_elem.norm()
-    PETSc.Sys.Print(f"Norm Sol Elem: {norm_sol:.4e}")
-    PETSc.Sys.Print(f"Norm Ex Elem: {norm_ex:.4e}")
 
     sum_sol = u_sol_elem.sum()
     sum_ex = u_exact_elem.sum()
