@@ -101,7 +101,11 @@ class PoissonNeumannStag:
         xm, ym = widths[0], widths[1]
         xe, ye = xs + xm, ys + ym
         ex, ey = extra[0], extra[1]
-
+        print(f"{self.dm.comm.rank=} {xs=} {ys=}")
+        print(f"{self.dm.comm.rank=} {xm=} {ym=}")
+        print(f"{self.dm.comm.rank=} {xe=} {ye=}")
+        print(f"{self.dm.comm.rank=} {ex=} {ey=}")
+        
         # G: Faces (rows) -> Elements (cols)
         # Left Faces
         for j in range(ys, ye):
@@ -231,81 +235,82 @@ class PoissonNeumannStag:
 
 def main():
     PETSc.Sys.popErrorHandler()
-    nx, ny = 10, 10
-    solver = PoissonNeumannStag(nx, ny)
+    for nref in range(0,3):
+        nx, ny = 10*2**nref, 10*2**nref
+        solver = PoissonNeumannStag(nx, ny)
 
-    PETSc.Sys.Print("Building DMStag Operators...")
-    G, D = solver.build_operators()
+        PETSc.Sys.Print("Building DMStag Operators...")
+        G, D = solver.build_operators()
 
-    PETSc.Sys.Print("Building Laplacian A...")
-    A = solver.assemble_laplacian()
+        PETSc.Sys.Print("Building Laplacian A...")
+        A = solver.assemble_laplacian()
 
-    u_exact = solver.dm.createGlobalVector()
-    rhs = solver.dm.createGlobalVector()
+        u_exact = solver.dm.createGlobalVector()
+        rhs = solver.dm.createGlobalVector()
 
-    def func_u(x, y):
-        return np.cos(np.pi * x) * np.cos(np.pi * y)
+        def func_u(x, y):
+            return np.cos(np.pi * x) * np.cos(np.pi * y)
 
-    def func_f(x, y):
-        return 2 * np.pi**2 * func_u(x, y)
+        def func_f(x, y):
+            return 2 * np.pi**2 * func_u(x, y)
 
-    solver.set_values(u_exact, func_elem=func_u, func_flux_x=lambda x,y:0, func_flux_y=lambda x,y:0)
-    solver.set_values(rhs, func_elem=func_f, func_flux_x=lambda x,y:0, func_flux_y=lambda x,y:0)
+        solver.set_values(u_exact, func_elem=func_u, func_flux_x=lambda x,y:0, func_flux_y=lambda x,y:0)
+        solver.set_values(rhs, func_elem=func_f, func_flux_x=lambda x,y:0, func_flux_y=lambda x,y:0)
 
-    PETSc.Sys.Print("Consistency check...")
-    flux = G.createVecLeft()
-    G.mult(u_exact, flux)
-    div = D.createVecLeft()
-    D.mult(flux, div)
-    Au = A.createVecLeft()
-    A.mult(u_exact, Au)
-    Au.axpy(1.0, div)
-    err_cons = Au.norm(PETSc.NormType.NORM_2)
-    PETSc.Sys.Print(f"Consistency Error ||(A + D*G) u||: {err_cons:.4e}")
+        PETSc.Sys.Print("Consistency check...")
+        flux = G.createVecLeft()
+        G.mult(u_exact, flux)
+        div = D.createVecLeft()
+        D.mult(flux, div)
+        Au = A.createVecLeft()
+        A.mult(u_exact, Au)
+        Au.axpy(1.0, div)
+        err_cons = Au.norm(PETSc.NormType.NORM_2)
+        PETSc.Sys.Print(f"Consistency Error ||(A + D*G) u||: {err_cons:.4e}")
 
-    PETSc.Sys.Print("Solving system...")
-    u_sol = solver.solve(A, rhs)
+        PETSc.Sys.Print("Solving system...")
+        u_sol = solver.solve(A, rhs)
 
-    # Check Error using P matrix (AIJ) to mask flux
-    P = solver.create_aij_matrix()
-    (start_indices, widths, extra) = solver.dm.getCorners()
-    xs, ys = start_indices[0], start_indices[1]
-    xm, ym = widths[0], widths[1]
-    xe, ye = xs + xm, ys + ym
+        # Check Error using P matrix (AIJ) to mask flux
+        P = solver.create_aij_matrix()
+        (start_indices, widths, extra) = solver.dm.getCorners()
+        xs, ys = start_indices[0], start_indices[1]
+        xm, ym = widths[0], widths[1]
+        xe, ye = xs + xm, ys + ym
 
-    for j in range(ys, ye):
-        for i in range(xs, xe):
-            row_idx = solver.get_global_index(i, j, solver.slot_elem)
-            if row_idx >= 0:
-                P.setValues([row_idx], [row_idx], [1.0], PETSc.InsertMode.ADD_VALUES)
-    P.assemble()
+        for j in range(ys, ye):
+            for i in range(xs, xe):
+                row_idx = solver.get_global_index(i, j, solver.slot_elem)
+                if row_idx >= 0:
+                    P.setValues([row_idx], [row_idx], [1.0], PETSc.InsertMode.ADD_VALUES)
+                    P.assemble()
 
-    u_sol_elem = u_sol.duplicate()
-    P.mult(u_sol, u_sol_elem)
+        u_sol_elem = u_sol.duplicate()
+        P.mult(u_sol, u_sol_elem)
 
-    u_exact_elem = u_exact.duplicate()
-    P.mult(u_exact, u_exact_elem)
+        u_exact_elem = u_exact.duplicate()
+        P.mult(u_exact, u_exact_elem)
 
-    norm_sol = u_sol_elem.norm()
-    norm_ex = u_exact_elem.norm()
+        norm_sol = u_sol_elem.norm()
+        norm_ex = u_exact_elem.norm()
 
-    sum_sol = u_sol_elem.sum()
-    sum_ex = u_exact_elem.sum()
-    mean_sol = sum_sol / (nx*ny)
-    mean_ex = sum_ex / (nx*ny)
-    u_sol_elem.shift(mean_ex - mean_sol)
+        sum_sol = u_sol_elem.sum()
+        sum_ex = u_exact_elem.sum()
+        mean_sol = sum_sol / (nx*ny)
+        mean_ex = sum_ex / (nx*ny)
+        u_sol_elem.shift(mean_ex - mean_sol)
+        
+        diff = u_sol_elem.duplicate()
+        u_sol_elem.copy(diff)
+        diff.axpy(-1.0, u_exact_elem)
+        
+        err_L2 = diff.norm(PETSc.NormType.NORM_2)
+        PETSc.Sys.Print(f"L2 Error: {err_L2:.4e}")
+        
+        if err_L2 > 0.05:
+            raise ValueError(f"L2 Error {err_L2:.4e} exceeds tolerance 0.05")
 
-    diff = u_sol_elem.duplicate()
-    u_sol_elem.copy(diff)
-    diff.axpy(-1.0, u_exact_elem)
-
-    err_L2 = diff.norm(PETSc.NormType.NORM_2)
-    PETSc.Sys.Print(f"L2 Error: {err_L2:.4e}")
-
-    if err_L2 > 0.05:
-        raise ValueError(f"L2 Error {err_L2:.4e} exceeds tolerance 0.05")
-
-    P.destroy()
+        P.destroy()
 
 if __name__ == "__main__":
     main()
